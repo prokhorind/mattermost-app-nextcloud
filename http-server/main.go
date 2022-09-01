@@ -41,8 +41,8 @@ func getPort() string {
 }
 
 func getEnv(key, fallback string) string {
-	value, exists := os.LookupEnv(key)
-	if !exists {
+	value := os.Getenv(key)
+	if len(value) == 0 {
 		value = fallback
 	}
 	return value

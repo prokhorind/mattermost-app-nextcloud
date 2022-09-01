@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
@@ -19,6 +21,10 @@ func init() {
 
 func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// If no name is provided in the HTTP request body, throw an error
+
+	reqString, _ := json.Marshal(req)
+	fmt.Printf("req: %s", reqString)
+
 	return ginLambda.ProxyWithContext(ctx, req)
 }
 

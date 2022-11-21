@@ -126,6 +126,7 @@ func FileSearch(c *gin.Context) {
 
 	if len(files) == 0 {
 		c.JSON(http.StatusOK, apps.NewTextResponse("File %s not found check the file name and try again", fileName))
+		return
 	}
 
 	for _, f := range files {

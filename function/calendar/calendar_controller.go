@@ -429,13 +429,6 @@ func HandleGetParsedCalendarDate(c *gin.Context) {
 	if err != nil {
 		log.Error(err)
 	}
-	/*	var loc *time.Location
-
-		if creq.Context.ActingUser.Timezone["useAutomaticTimezone"] == "false" {
-			loc, _ = time.LoadLocation(creq.Context.ActingUser.Timezone["manualTimezone"])
-		} else {
-			loc, _ = time.LoadLocation(creq.Context.ActingUser.Timezone["automaticTimezone"])
-		}*/
 
 	now := time.Now()
 

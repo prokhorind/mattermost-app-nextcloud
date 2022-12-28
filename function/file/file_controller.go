@@ -3,18 +3,18 @@ package file
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/mattermost/mattermost-plugin-apps/apps"
+	"github.com/mattermost/mattermost-plugin-apps/apps/appclient"
 	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/prokhorind/nextcloud/function/oauth"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-apps/apps"
-	"github.com/mattermost/mattermost-plugin-apps/apps/appclient"
-	"github.com/prokhorind/nextcloud/function/oauth"
 )
 
 func SearchFolders(c *gin.Context) {
@@ -57,6 +57,11 @@ func FileUploadForm(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
 
+	if len(creq.Context.Post.FileIds) == 0 {
+		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Selected post doesn't have any files to be uploaded"})
+		return
+	}
+
 	oauthService := oauth.OauthServiceImpl{creq}
 	token := oauthService.RefreshToken()
 	asActingUser := appclient.AsActingUser(creq.Context)
@@ -69,7 +74,7 @@ func FileUploadForm(c *gin.Context) {
 
 	body := createSearchRequestBody(userId, "")
 	resp := sendFileSearchRequest(url, body, token.AccessToken)
-	selectOptions := make([]apps.SelectOption, 0)
+	folderSelectOptions := make([]apps.SelectOption, 0)
 	for _, f := range resp.FileResponse {
 		hasContentType := false
 
@@ -81,10 +86,28 @@ func FileUploadForm(c *gin.Context) {
 		}
 		if !hasContentType {
 			split := strings.Split(f.Href, "/remote.php/dav/files/"+userId)[1]
-			option := apps.SelectOption{Label: split, Value: split}
-			selectOptions = append(selectOptions, option)
+			option := apps.SelectOption{Label: split[1 : len(split)-1], Value: split}
+			folderSelectOptions = append(folderSelectOptions, option)
 		}
 	}
+
+	fileSelectOptions := make([]apps.SelectOption, 0)
+	fileInfos, _, _ := asActingUser.GetFileInfosForPost(creq.Context.Post.Id, "")
+
+	for _, fi := range fileInfos {
+		option := apps.SelectOption{Label: fi.Name, Value: fi.Id}
+		fileSelectOptions = append(fileSelectOptions, option)
+	}
+	rootSelectOption := apps.SelectOption{Label: "Root", Value: "/"}
+	folderSelectOptions = append(folderSelectOptions, rootSelectOption)
+
+	sort.Slice(folderSelectOptions, func(i, j int) bool {
+		return folderSelectOptions[i].Label < folderSelectOptions[j].Label
+	})
+
+	sort.Slice(fileSelectOptions, func(i, j int) bool {
+		return fileSelectOptions[i].Label < fileSelectOptions[j].Label
+	})
 
 	form := &apps.Form{
 		Title: "Upload to Nextcloud ",
@@ -96,10 +119,21 @@ func FileUploadForm(c *gin.Context) {
 				Name:                "Folder",
 				Label:               "Folder",
 				IsRequired:          true,
-				SelectStaticOptions: selectOptions,
+				SelectStaticOptions: folderSelectOptions,
+				Value:               rootSelectOption,
+			},
+
+			{
+				Type:                "static_select",
+				Name:                "Files",
+				Label:               "Files",
+				IsRequired:          true,
+				SelectIsMulti:       true,
+				SelectStaticOptions: fileSelectOptions,
+				Value:               fileSelectOptions,
 			},
 		},
-		Submit: apps.NewCall("/file-upload").WithState(creq.Context.Post.FileIds).WithExpand(apps.Expand{
+		Submit: apps.NewCall("/file-upload").WithExpand(apps.Expand{
 			ActingUserAccessToken: apps.ExpandAll,
 			OAuth2App:             apps.ExpandAll,
 			OAuth2User:            apps.ExpandAll,
@@ -111,7 +145,7 @@ func FileUploadForm(c *gin.Context) {
 	c.JSON(http.StatusOK, apps.NewFormResponse(*form))
 }
 
-func FileSearch(c *gin.Context) {
+func FileShareForm(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
 	oauthService := oauth.OauthServiceImpl{creq}
@@ -129,17 +163,96 @@ func FileSearch(c *gin.Context) {
 	resp := sendFileSearchRequest(url, body, accessToken)
 
 	files := resp.FileResponse
+	fileSelectOptions := make([]apps.SelectOption, 0)
+
+	for _, f := range files {
+		ref := f.Href
+		refs := strings.Split(ref, "/")
+		r := strings.NewReplacer("%20", " ")
+		sharingPath := r.Replace("/" + strings.Join(refs[5:], "/"))
+		option := apps.SelectOption{Label: sharingPath[1:], Value: sharingPath}
+		fileSelectOptions = append(fileSelectOptions, option)
+	}
 
 	if len(files) == 0 {
 		c.JSON(http.StatusOK, apps.NewTextResponse("File %s not found check the file name and try again", fileName))
 		return
 	}
 
-	for _, f := range files {
-		sendFiles(f, &creq)
+	sort.Slice(fileSelectOptions, func(i, j int) bool {
+		return fileSelectOptions[i].Label < fileSelectOptions[j].Label
+	})
+
+	form := &apps.Form{
+		Title: "File share ",
+		Icon:  "icon.png",
+		Fields: []apps.Field{
+			{
+				Type:                "static_select",
+				Name:                "Files",
+				Label:               "Files",
+				IsRequired:          true,
+				SelectIsMulti:       true,
+				SelectStaticOptions: fileSelectOptions,
+			},
+		},
+		Submit: apps.NewCall("/file-share").WithExpand(apps.Expand{
+			ActingUserAccessToken: apps.ExpandAll,
+			OAuth2App:             apps.ExpandAll,
+			OAuth2User:            apps.ExpandAll,
+			Channel:               apps.ExpandAll,
+			ActingUser:            apps.ExpandAll,
+		}),
 	}
 
-	c.JSON(http.StatusOK, apps.NewDataResponse(nil))
+	c.JSON(http.StatusOK, apps.NewFormResponse(*form))
+}
+
+func FileShare(c *gin.Context) {
+	creq := apps.CallRequest{}
+	json.NewDecoder(c.Request.Body).Decode(&creq)
+	oauthService := oauth.OauthServiceImpl{creq}
+	token := oauthService.RefreshToken()
+	asActingUser := appclient.AsActingUser(creq.Context)
+	asActingUser.StoreOAuth2User(token)
+	accessToken := token.AccessToken
+	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
+	url := fmt.Sprintf("%s%s", remoteUrl, "/ocs/v2.php/apps/files_sharing/api/v1/shares")
+
+	fileShareService := FileShareServiceImpl{Url: url, Token: accessToken}
+
+	files := creq.Values["Files"].([]interface{})
+
+	asBot := appclient.AsBot(creq.Context)
+	for _, file := range files {
+		f := file.(map[string]interface{})["value"].(string)
+		sm, err := fileShareService.GetSharesInfo(f, 3)
+		if err == nil {
+
+			var userId string
+			asBot.KVGet("", fmt.Sprintf("nc-user-%s", sm.UidFileOwner), &userId)
+
+			post := model.Post{}
+			post.ChannelId = creq.Context.Channel.Id
+
+			attachment := model.SlackAttachment{}
+
+			u, _, _ := asBot.GetUser(userId, "")
+			attachment.AuthorName = u.Username
+			attachment.Title = sm.FileTarget[1:]
+			attachment.TitleLink = sm.URL
+			attachment.Footer = sm.Mimetype
+
+			attachments := make([]model.SlackAttachment, 0)
+
+			attachments = append(attachments, attachment)
+
+			post.AddProp("attachments", attachments)
+
+			asBot.CreatePost(&post)
+		}
+	}
+	c.JSON(http.StatusOK, apps.NewTextResponse(""))
 }
 
 func FileUpload(c *gin.Context) {
@@ -154,19 +267,19 @@ func FileUpload(c *gin.Context) {
 
 	folder := creq.Values["Folder"].(map[string]interface{})["value"].(string)
 
+	files := creq.Values["Files"].([]interface{})
+
 	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
 	userId := creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
 
 	fileUrl := fmt.Sprintf("%s%s%s%s", remoteUrl, "/remote.php/dav/files/", userId, folder)
-
-	files := creq.State.([]interface{})
 
 	asBot := appclient.AsBot(creq.Context)
 	AddBot(creq)
 	var uploadedFiles []string
 
 	for _, file := range files {
-		f := file.(string)
+		f := file.(map[string]interface{})["value"].(string)
 
 		fileInfo, _, err := asBot.GetFileInfo(f)
 

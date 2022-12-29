@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	"github.com/mattermost/mattermost-plugin-apps/apps/appclient"
-	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/prokhorind/nextcloud/function/oauth"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -228,28 +227,7 @@ func FileShare(c *gin.Context) {
 		f := file.(map[string]interface{})["value"].(string)
 		sm, err := fileShareService.GetSharesInfo(f, 3)
 		if err == nil {
-
-			var userId string
-			asBot.KVGet("", fmt.Sprintf("nc-user-%s", sm.UidFileOwner), &userId)
-
-			post := model.Post{}
-			post.ChannelId = creq.Context.Channel.Id
-
-			attachment := model.SlackAttachment{}
-
-			u, _, _ := asBot.GetUser(userId, "")
-			attachment.AuthorName = u.Username
-			attachment.Title = sm.FileTarget[1:]
-			attachment.TitleLink = sm.URL
-			attachment.Footer = sm.Mimetype
-
-			attachments := make([]model.SlackAttachment, 0)
-
-			attachments = append(attachments, attachment)
-
-			post.AddProp("attachments", attachments)
-
-			asBot.CreatePost(&post)
+			createFileSharePostWithAttachments(asBot, sm, creq)
 		}
 	}
 	c.JSON(http.StatusOK, apps.NewTextResponse(""))
@@ -333,44 +311,10 @@ func FileUpload(c *gin.Context) {
 				} else {
 					uploadedFiles = append(uploadedFiles, fileInfo.Name)
 					log.Infof("file was uploaded %s", destination)
-
 				}
 			}
-
 		}
 
 	}
 	c.JSON(http.StatusOK, apps.NewTextResponse("Uploaded files:  %s", strings.Join(uploadedFiles, ",")))
-
-}
-
-func uploadChunks(chunkFileSizeInBytes int64, fileInfo *model.FileInfo, mmfileUrl string, creq apps.CallRequest, fileService FileChunkServiceImpl) bool {
-	var low int64
-	var high int64
-	for low = 0; low < fileInfo.Size; low += chunkFileSizeInBytes + 1 {
-		high = chunkFileSizeInBytes + low
-		chunkUploaded := uploadChunk(mmfileUrl, creq, low, high, fileService)
-		if !chunkUploaded {
-			return false
-		}
-	}
-	return true
-}
-
-func uploadChunk(mmfileUrl string, creq apps.CallRequest, low int64, high int64, fileService FileChunkServiceImpl) bool {
-	chunk, err := GetChunkedFile(mmfileUrl, creq.Context.BotAccessToken, fmt.Sprint(low), fmt.Sprint(high))
-
-	if err != nil {
-		log.Errorf("Chunk was not downloaded from MM %s", err.Error())
-		fileService.abortChunkUpload()
-		return false
-	}
-
-	_, uploadError := fileService.uploadFileChunk(chunk, fmt.Sprintf("%016d", low), fmt.Sprintf("%016d", high))
-	if uploadError != nil {
-		fileService.abortChunkUpload()
-		log.Errorf("Chunk was not uploaded to NC %s", uploadError.Error())
-		return false
-	}
-	return true
 }

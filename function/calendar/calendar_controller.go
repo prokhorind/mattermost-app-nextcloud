@@ -76,6 +76,9 @@ func HandleCreateEventForm(c *gin.Context) {
 	calendarService := CalendarServiceImpl{Url: reqUrl, Token: accessToken}
 	option := creq.State.(map[string]interface{})
 
+	loc := getMMUserLocation(creq)
+	currentUserTime := time.Now().In(loc)
+
 	form := &apps.Form{
 		Title: "Create Nextcloud calendar event",
 		Icon:  "icon.png",
@@ -91,6 +94,7 @@ func HandleCreateEventForm(c *gin.Context) {
 				Name:       "from-event-date",
 				Label:      "From",
 				IsRequired: true,
+				Value:      apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
 				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
 					ActingUserAccessToken: apps.ExpandAll,
 					OAuth2App:             apps.ExpandAll,
@@ -203,6 +207,7 @@ func HandleGetCalendarEventsForm(c *gin.Context) {
 				Name:       "to-event-date",
 				Label:      "To",
 				IsRequired: true,
+
 				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
 					ActingUserAccessToken: apps.ExpandAll,
 					OAuth2App:             apps.ExpandAll,
@@ -237,6 +242,8 @@ func GetUserSelectedEventsDate(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
 	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	loc := getMMUserLocation(creq)
+	currentUserTime := time.Now().In(loc)
 	form := &apps.Form{
 		Title: "Nextcloud calendar events",
 		Icon:  "icon.png",
@@ -246,6 +253,7 @@ func GetUserSelectedEventsDate(c *gin.Context) {
 				Name:       "from-event-date",
 				Label:      "Date",
 				IsRequired: true,
+				Value:      apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
 				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
 					ActingUserAccessToken: apps.ExpandAll,
 					OAuth2App:             apps.ExpandAll,
@@ -333,10 +341,6 @@ func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, cale
 	calendarService := CalendarServiceImpl{Url: reqUrl, Token: token.AccessToken}
 
 	events, eventIds := calendarService.GetCalendarEvents(eventRange)
-	if len(events) == 0 {
-		c.JSON(http.StatusOK, apps.NewTextResponse("You do not have events in this calendar"))
-		return
-	}
 	calendarEvents := make([]ics.VEvent, 0)
 
 	for i := 0; i < len(events); i++ {
@@ -360,7 +364,8 @@ func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, cale
 	}
 
 	if len(dailyCalendarEvents) == 0 {
-		c.JSON(http.StatusOK, apps.NewDataResponse("You don`t have events at this date"))
+		c.JSON(http.StatusOK, apps.NewTextResponse("You don`t have events at this date"))
+		return
 	}
 
 	for i, e := range dailyCalendarEvents {
@@ -405,10 +410,9 @@ func createCalendarEventPost(event *ics.VEvent, status ics.ParticipationStatus, 
 	commandBinding := apps.Binding{
 		Location: "embedded",
 		AppID:    "nextcloud",
-		Label:    "Event " + name,
-		Description: сreateDescriptionForEvent(description, start,
-			end, сastSingleEmailToMMUserNickname(organizer, "", bot),
-			сastUserEmailsToMMUserNicknames(event.Attendees(), bot), remoteUrl, loc),
+		Label:    createNameForEvent(name, start, end, remoteUrl, loc),
+		Description: сreateDescriptionForEvent(description, сastSingleEmailToMMUserNickname(organizer, "", bot),
+			сastUserEmailsToMMUserNicknames(event.Attendees(), bot)),
 		Bindings: []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
@@ -471,9 +475,8 @@ func сastSingleEmailToMMUserNickname(email string, status string, bot appclient
 	}
 }
 
-func сreateDescriptionForEvent(description string, start time.Time, finish time.Time, organizer string, attendees string, remoteUrl string, loc *time.Location) string {
-	finalDesc := ""
-	format := "Jan 2 15:04:05"
+func createNameForEvent(name string, start time.Time, finish time.Time, remoteUrl string, loc *time.Location) string {
+	format := "15:04"
 	day := strconv.Itoa(start.Day())
 	month := strconv.Itoa(int(start.Month()))
 	if len(day) < 2 {
@@ -483,15 +486,20 @@ func сreateDescriptionForEvent(description string, start time.Time, finish time
 		month = "0" + month
 	}
 	calendarUrl := fmt.Sprintf("%s%s%s-%s-%s", remoteUrl, "/apps/calendar/dayGridMonth/", strconv.Itoa(start.Year()), month, day)
+	return fmt.Sprintf("[%s](%s) %s-%s", name, calendarUrl, start.In(loc).Format(format), finish.In(loc).Format(format))
+}
+
+func сreateDescriptionForEvent(description string, organizer string, attendees string) string {
+	finalDesc := ""
+
 	if len(description) != 0 {
-		finalDesc += fmt.Sprintf("Description [%s](%s).", description, calendarUrl)
+		finalDesc += fmt.Sprintf("Description %s. ", description)
 	}
-	finalDesc += fmt.Sprintf(" Organized by %s.", organizer[:len(organizer)-1])
+	finalDesc += fmt.Sprintf("Organized by %s. ", organizer[:len(organizer)-1])
 	if len(attendees) != 0 {
-		finalDesc += fmt.Sprintf(" Attendies: %s.", attendees)
+		finalDesc += fmt.Sprintf("Attendies: %s. ", attendees)
 	}
 
-	finalDesc += fmt.Sprintf(" Start date: %s, End date: %s", start.In(loc).Format(format), finish.In(loc).Format(format))
 	return finalDesc
 }
 
@@ -642,10 +650,10 @@ func createCalendarPost(i int, option apps.SelectOption, disabled bool) *model.P
 		Bindings:    []apps.Binding{},
 	}
 
-	createCalendarEventsButton(&commandBinding, option, "Calendar", "Create calendar event")
 	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Today", "today")
 	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Tomorrow", "tomorrow")
 	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Select date", "select-date-form")
+	createCalendarEventsButton(&commandBinding, option, "Calendar", "Create event")
 
 	//if disabled {
 	//	createDoNotDisturbButton(&commandBinding, option, "Enable", "Enable notifications")

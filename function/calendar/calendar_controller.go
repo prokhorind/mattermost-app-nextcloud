@@ -90,11 +90,12 @@ func HandleCreateEventForm(c *gin.Context) {
 				IsRequired: true,
 			},
 			{
-				Type:       apps.FieldTypeDynamicSelect,
-				Name:       "from-event-date",
-				Label:      "From",
-				IsRequired: true,
-				Value:      apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
+				Type:        apps.FieldTypeDynamicSelect,
+				Name:        "from-event-date",
+				Label:       "From",
+				IsRequired:  true,
+				Description: "Type \"Today\", \"Tomorrow\" or \"Monday 13:00\" to choose a date",
+				Value:       apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
 				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
 					ActingUserAccessToken: apps.ExpandAll,
 					OAuth2App:             apps.ExpandAll,
@@ -249,11 +250,12 @@ func GetUserSelectedEventsDate(c *gin.Context) {
 		Icon:  "icon.png",
 		Fields: []apps.Field{
 			{
-				Type:       apps.FieldTypeDynamicSelect,
-				Name:       "from-event-date",
-				Label:      "Date",
-				IsRequired: true,
-				Value:      apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
+				Type:        apps.FieldTypeDynamicSelect,
+				Name:        "from-event-date",
+				Label:       "Date",
+				IsRequired:  true,
+				Description: "Type \"Today\", \"Tomorrow\" or \"Monday 13:00\" to choose a date",
+				Value:       apps.SelectOption{Label: currentUserTime.Format(time.ANSIC), Value: currentUserTime.String()},
 				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
 					ActingUserAccessToken: apps.ExpandAll,
 					OAuth2App:             apps.ExpandAll,
@@ -477,6 +479,7 @@ func сastSingleEmailToMMUserNickname(email string, status string, bot appclient
 
 func createNameForEvent(name string, start time.Time, finish time.Time, remoteUrl string, loc *time.Location) string {
 	format := "15:04"
+	dayFormat := "Jan 2"
 	day := strconv.Itoa(start.Day())
 	month := strconv.Itoa(int(start.Month()))
 	if len(day) < 2 {
@@ -485,8 +488,8 @@ func createNameForEvent(name string, start time.Time, finish time.Time, remoteUr
 	if len(month) < 2 {
 		month = "0" + month
 	}
-	calendarUrl := fmt.Sprintf("%s%s%s-%s-%s", remoteUrl, "/apps/calendar/dayGridMonth/", strconv.Itoa(start.Year()), month, day)
-	return fmt.Sprintf("[%s](%s) %s-%s", name, calendarUrl, start.In(loc).Format(format), finish.In(loc).Format(format))
+	calendarUrl := fmt.Sprintf("%s%s%s-%s-%s", remoteUrl, "/apps/calendar/timeGridDay/", strconv.Itoa(start.Year()), month, day)
+	return fmt.Sprintf("[%s](%s) %s %s-%s", name, calendarUrl, start.In(loc).Format(dayFormat), start.In(loc).Format(format), finish.In(loc).Format(format))
 }
 
 func сreateDescriptionForEvent(description string, organizer string, attendees string) string {
@@ -645,8 +648,8 @@ func createCalendarPost(i int, option apps.SelectOption, disabled bool) *model.P
 	commandBinding := apps.Binding{
 		Location:    "embedded",
 		AppID:       "nextcloud",
-		Label:       "Calendar " + strconv.Itoa(i),
-		Description: option.Label,
+		Label:       "Calendar " + option.Label,
+		Description: "Calendar actions",
 		Bindings:    []apps.Binding{},
 	}
 

@@ -233,11 +233,81 @@ func HandleGetCalendarEventsForm(c *gin.Context) {
 	c.JSON(http.StatusOK, apps.NewFormResponse(*form))
 }
 
-func HandleGetEvents(c *gin.Context) {
-
+func GetUserSelectedEventsDate(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
+	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	form := &apps.Form{
+		Title: "Nextcloud calendar events",
+		Icon:  "icon.png",
+		Fields: []apps.Field{
+			{
+				Type:       apps.FieldTypeDynamicSelect,
+				Name:       "from-event-date",
+				Label:      "Date",
+				IsRequired: true,
+				SelectDynamicLookup: apps.NewCall("/get-parsed-date").WithExpand(apps.Expand{
+					ActingUserAccessToken: apps.ExpandAll,
+					OAuth2App:             apps.ExpandAll,
+					OAuth2User:            apps.ExpandAll,
+					Channel:               apps.ExpandAll,
+					ActingUser:            apps.ExpandAll,
+				}),
+			},
+		},
+		Submit: apps.NewCall("/get-calendar-events-select-date/" + calendar).WithExpand(apps.Expand{
+			ActingUserAccessToken: apps.ExpandAll,
+			OAuth2App:             apps.ExpandAll,
+			OAuth2User:            apps.ExpandAll,
+			Channel:               apps.ExpandAll,
+			ActingUser:            apps.ExpandAll,
+		}),
+	}
+	c.JSON(http.StatusOK, apps.NewFormResponse(*form))
+}
 
+func HandleGetEventsToday(c *gin.Context) {
+	creq := apps.CallRequest{}
+	json.NewDecoder(c.Request.Body).Decode(&creq)
+	location := getMMUserLocation(creq)
+	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	HandleGetEvents(c, creq, time.Now().In(location), calendar)
+}
+
+func HandleGetEventsTomorrow(c *gin.Context) {
+	creq := apps.CallRequest{}
+	json.NewDecoder(c.Request.Body).Decode(&creq)
+	location := getMMUserLocation(creq)
+	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	HandleGetEvents(c, creq, time.Now().AddDate(0, 0, 1).In(location), calendar)
+}
+
+func HandleGetEventsAtSelectedDay(c *gin.Context) {
+	calendar := c.Param("calendar")
+	creq := apps.CallRequest{}
+	json.NewDecoder(c.Request.Body).Decode(&creq)
+	location := getMMUserLocation(creq)
+	fromDateUTC := creq.Values["from-event-date"].(map[string]interface{})["value"].(string)
+	from, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", fromDateUTC)
+	if err != nil {
+		println(err.Error())
+	}
+	HandleGetEvents(c, creq, from.In(location), calendar)
+}
+
+func getMMUserLocation(creq apps.CallRequest) *time.Location {
+	var timezone string
+	var loc *time.Location
+	if creq.Context.ActingUser.Timezone["useAutomaticTimezone"] == "false" {
+		timezone = creq.Context.ActingUser.Timezone["manualTimezone"]
+	} else {
+		timezone = creq.Context.ActingUser.Timezone["automaticTimezone"]
+	}
+	loc, _ = time.LoadLocation(timezone)
+	return loc
+}
+
+func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, calendar string) {
 	oauthService := oauth.OauthServiceImpl{creq}
 	token := oauthService.RefreshToken()
 
@@ -246,15 +316,16 @@ func HandleGetEvents(c *gin.Context) {
 
 	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
 	userId := creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
-	calendar := creq.Values["calendar"].(map[string]interface{})["value"].(string)
 	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s", remoteUrl, userId, calendar)
 
-	fromDateUTC := creq.Values["from-event-date"].(map[string]interface{})["value"].(string)
-	toDateUTC := creq.Values["to-event-date"].(map[string]interface{})["value"].(string)
+	loc := getMMUserLocation(creq)
 
-	from, _ := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", fromDateUTC)
-	to, _ := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", toDateUTC)
+	asBot := appclient.AsBot(creq.Context)
+	mmUserId := creq.Context.ActingUser.Id
+	organizerEmail := creq.Context.ActingUser.Email
 
+	from := date.AddDate(0, 0, -1)
+	to := date.AddDate(0, 0, 1)
 	eventRange := CalendarEventRequestRange{
 		From: from,
 		To:   to,
@@ -266,19 +337,35 @@ func HandleGetEvents(c *gin.Context) {
 		c.JSON(http.StatusOK, apps.NewTextResponse("You do not have events in this calendar"))
 		return
 	}
-	calEvents := make([]ics.Calendar, len(events))
+	calendarEvents := make([]ics.VEvent, 0)
 
 	for i := 0; i < len(events); i++ {
 		cal, _ := ics.ParseCalendar(strings.NewReader(events[i]))
-		calEvents[i] = *cal
+		event := *cal.Events()[0]
+		if len(event.Properties) != 0 {
+			calendarEvents = append(calendarEvents, event)
+		}
 	}
 
-	asBot := appclient.AsBot(creq.Context)
-	mmUserId := creq.Context.ActingUser.Id
-	organizerEmail := creq.Context.ActingUser.Email
-	for i, e := range calEvents {
-		status := findAttendeeStatus(asBot, *e.Events()[0], creq.Context.ActingUser.Id)
-		post := createCalendarEventPost(e.Events()[0], status, *asBot, calendar, organizerEmail, eventIds[i], userId)
+	dailyCalendarEvents := make([]ics.VEvent, 0)
+
+	for _, e := range calendarEvents {
+		at, _ := e.GetStartAt()
+		endAt, _ := e.GetEndAt()
+		localStartTime := at.In(loc)
+		localEndTime := endAt.In(loc)
+		if localStartTime.Day() == date.Day() || localEndTime.Day() == date.Day() {
+			dailyCalendarEvents = append(dailyCalendarEvents, e)
+		}
+	}
+
+	if len(dailyCalendarEvents) == 0 {
+		c.JSON(http.StatusOK, apps.NewDataResponse("You don`t have events at this date"))
+	}
+
+	for i, e := range dailyCalendarEvents {
+		status := findAttendeeStatus(asBot, e, creq.Context.ActingUser.Id)
+		post := createCalendarEventPost(&e, status, *asBot, calendar, organizerEmail, eventIds[i], userId, loc, creq.Context.OAuth2.RemoteRootURL)
 		asBot.DMPost(mmUserId, post)
 	}
 
@@ -295,8 +382,8 @@ func findAttendeeStatus(client *appclient.Client, event ics.VEvent, userId strin
 	return ""
 }
 
-func createCalendarEventPost(event *ics.VEvent, status ics.ParticipationStatus, bot appclient.Client, calendarId string, organizerEmail string, eventId string, userId string) *model.Post {
-	var name, start, finish, description, organizer, eventStatus string
+func createCalendarEventPost(event *ics.VEvent, status ics.ParticipationStatus, bot appclient.Client, calendarId string, organizerEmail string, eventId string, userId string, loc *time.Location, remoteUrl string) *model.Post {
+	var name, description, organizer, eventStatus string
 	for _, e := range event.Properties {
 		if e.BaseProperty.IANAToken == "DESCRIPTION" {
 			description = e.BaseProperty.Value
@@ -307,24 +394,21 @@ func createCalendarEventPost(event *ics.VEvent, status ics.ParticipationStatus, 
 		if e.BaseProperty.IANAToken == "SUMMARY" {
 			name = e.BaseProperty.Value
 		}
-		if e.BaseProperty.IANAToken == "DTSTART" {
-			start = e.BaseProperty.Value
-		}
-		if e.BaseProperty.IANAToken == "DTEND" {
-			finish = e.BaseProperty.Value
-		}
 		if e.BaseProperty.IANAToken == "STATUS" {
 			eventStatus = e.BaseProperty.Value
 		}
 	}
+
+	start, _ := event.GetStartAt()
+	end, _ := event.GetEndAt()
 	post := model.Post{}
 	commandBinding := apps.Binding{
 		Location: "embedded",
 		AppID:    "nextcloud",
 		Label:    "Event " + name,
-		Description: сreateDescriptionForEvent(description, сastDateToSpecificFormat(start, "Jan _2 15:04:05"),
-			сastDateToSpecificFormat(finish, "Jan _2 15:04:05"), сastSingleEmailToMMUserNickname(organizer, "", bot),
-			сastUserEmailsToMMUserNicknames(event.Attendees(), bot)),
+		Description: сreateDescriptionForEvent(description, start,
+			end, сastSingleEmailToMMUserNickname(organizer, "", bot),
+			сastUserEmailsToMMUserNicknames(event.Attendees(), bot), remoteUrl, loc),
 		Bindings: []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
@@ -366,6 +450,9 @@ func сastUserEmailsToMMUserNicknames(attendees []*ics.Attendee, bot appclient.C
 	for _, attendee := range attendees {
 		attendeesNicknames += сastSingleEmailToMMUserNickname(attendee.Email(), attendee.ICalParameters["PARTSTAT"][0], bot)
 	}
+	if len(attendeesNicknames) != 0 {
+		attendeesNicknames = attendeesNicknames[:len(attendeesNicknames)-1]
+	}
 	return attendeesNicknames
 }
 
@@ -384,19 +471,28 @@ func сastSingleEmailToMMUserNickname(email string, status string, bot appclient
 	}
 }
 
-func сastDateToSpecificFormat(dateStr string, outputFormat string) string {
-	date, error := time.Parse(icalTimestampFormatUtc, dateStr)
-
-	if error != nil {
-		date, _ := time.Parse(icalTimestampFormatUtcLocal, dateStr)
-		return date.Format(outputFormat)
+func сreateDescriptionForEvent(description string, start time.Time, finish time.Time, organizer string, attendees string, remoteUrl string, loc *time.Location) string {
+	finalDesc := ""
+	format := "Jan 2 15:04:05"
+	day := strconv.Itoa(start.Day())
+	month := strconv.Itoa(int(start.Month()))
+	if len(day) < 2 {
+		day = "0" + day
+	}
+	if len(month) < 2 {
+		month = "0" + month
+	}
+	calendarUrl := fmt.Sprintf("%s%s%s-%s-%s", remoteUrl, "/apps/calendar/dayGridMonth/", strconv.Itoa(start.Year()), month, day)
+	if len(description) != 0 {
+		finalDesc += fmt.Sprintf("Description [%s](%s).", description, calendarUrl)
+	}
+	finalDesc += fmt.Sprintf(" Organized by %s.", organizer[:len(organizer)-1])
+	if len(attendees) != 0 {
+		finalDesc += fmt.Sprintf(" Attendies: %s.", attendees)
 	}
 
-	return date.Format(outputFormat)
-}
-
-func сreateDescriptionForEvent(description string, start string, finish string, organizer string, attendees string) string {
-	return fmt.Sprintf("Description %s. Organized by %sAttendies: %s. Start date: %s, End date: %s", description, organizer, attendees, start, finish)
+	finalDesc += fmt.Sprintf(" Start date: %s, End date: %s", start.In(loc).Format(format), finish.In(loc).Format(format))
+	return finalDesc
 }
 
 func prepareMeetingDurations() []apps.SelectOption {
@@ -547,13 +643,16 @@ func createCalendarPost(i int, option apps.SelectOption, disabled bool) *model.P
 	}
 
 	createCalendarEventsButton(&commandBinding, option, "Calendar", "Create calendar event")
-	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Calendar events")
-	if disabled {
-		createDoNotDisturbButton(&commandBinding, option, "Enable", "Enable notifications")
+	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Today", "today")
+	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Tomorrow", "tomorrow")
+	createGetCalendarEventsButton(&commandBinding, option, "Calendar", "Select date", "select-date-form")
 
-	} else {
-		createDoNotDisturbButton(&commandBinding, option, "Disable", "Disable notifications")
-	}
+	//if disabled {
+	//	createDoNotDisturbButton(&commandBinding, option, "Enable", "Enable notifications")
+	//
+	//} else {
+	//	createDoNotDisturbButton(&commandBinding, option, "Disable", "Disable notifications")
+	//}
 
 	m1 := make(map[string]interface{})
 	m1["app_bindings"] = []apps.Binding{commandBinding}
@@ -563,24 +662,24 @@ func createCalendarPost(i int, option apps.SelectOption, disabled bool) *model.P
 
 }
 
-func createDoNotDisturbButton(commandBinding *apps.Binding, option apps.SelectOption, location apps.Location, label string) {
-	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
-		Location: location,
-		Label:    label,
-		Submit: apps.NewCall(fmt.Sprintf("/calendars/%s/status/%s", option.Value, location)).WithExpand(apps.Expand{
-			OAuth2App:             apps.ExpandAll,
-			OAuth2User:            apps.ExpandAll,
-			ActingUserAccessToken: apps.ExpandAll,
-			ActingUser:            apps.ExpandAll,
-		}),
-	})
-}
+//func createDoNotDisturbButton(commandBinding *apps.Binding, option apps.SelectOption, location apps.Location, label string) {
+//	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
+//		Location: location,
+//		Label:    label,
+//		Submit: apps.NewCall(fmt.Sprintf("/calendars/%s/status/%s", option.Value, location)).WithExpand(apps.Expand{
+//			OAuth2App:             apps.ExpandAll,
+//			OAuth2User:            apps.ExpandAll,
+//			ActingUserAccessToken: apps.ExpandAll,
+//			ActingUser:            apps.ExpandAll,
+//		}),
+//	})
+//}
 
-func createGetCalendarEventsButton(commandBinding *apps.Binding, option apps.SelectOption, location apps.Location, label string) {
+func createGetCalendarEventsButton(commandBinding *apps.Binding, option apps.SelectOption, location apps.Location, label string, day string) {
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 		Location: location,
 		Label:    label,
-		Submit: apps.NewCall("/get-calendar-events-form").WithExpand(apps.Expand{
+		Submit: apps.NewCall("/get-calendar-events-" + day).WithExpand(apps.Expand{
 			OAuth2App:             apps.ExpandAll,
 			OAuth2User:            apps.ExpandAll,
 			ActingUserAccessToken: apps.ExpandAll,

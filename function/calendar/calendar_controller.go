@@ -334,8 +334,7 @@ func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, cale
 	mmUserId := creq.Context.ActingUser.Id
 	organizerEmail := creq.Context.ActingUser.Email
 
-	from := date.AddDate(0, 0, -1)
-	to := date.AddDate(0, 0, 1)
+	from, to := prepareTimeRangeForGetEventsRequest(date)
 	eventRange := CalendarEventRequestRange{
 		From: from,
 		To:   to,
@@ -377,6 +376,13 @@ func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, cale
 	}
 
 	c.JSON(http.StatusOK, apps.NewDataResponse(nil))
+}
+
+func prepareTimeRangeForGetEventsRequest(chosenDate time.Time) (time.Time, time.Time) {
+	date := chosenDate.Add(-time.Minute * time.Duration(chosenDate.Minute()))
+	date = date.Add(-time.Hour * time.Duration(chosenDate.Hour()))
+	date = date.Add(-time.Second * time.Duration(chosenDate.Second()))
+	return date.AddDate(0, 0, -1), date.AddDate(0, 0, 1)
 }
 
 func findAttendeeStatus(client *appclient.Client, event ics.VEvent, userId string) ics.ParticipationStatus {

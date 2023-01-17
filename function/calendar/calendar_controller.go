@@ -51,7 +51,13 @@ func HandleCreateEvent(c *gin.Context) {
 	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s.ics", remoteUrl, userId, calendar, uuid)
 
 	calendarService := CalendarServiceImpl{Url: reqUrl, Token: accessToken}
-	calendarService.CreateEvent(body)
+
+	_, err := calendarService.CreateEvent(body)
+
+	if err != nil {
+		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Calendar event was not created"})
+		return
+	}
 
 	DMEventPost(creq, calendarService, calendar, uuid)
 	c.JSON(http.StatusOK, apps.NewTextResponse(""))
@@ -532,7 +538,13 @@ func HandleChangeEventStatus(c *gin.Context) {
 	cal, _ := ics.ParseCalendar(strings.NewReader(eventIcs))
 
 	body := calendarService.UpdateAttendeeStatus(cal, user, status)
-	calendarService.CreateEvent(body)
+	_, err := calendarService.CreateEvent(body)
+
+	if err != nil {
+		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Event status was not updated"})
+		return
+	}
+
 	c.JSON(http.StatusOK, apps.NewTextResponse("event status updated:"+status))
 
 }

@@ -172,6 +172,11 @@ func HandleCreateEventForm(c *gin.Context) {
 	c.JSON(http.StatusOK, apps.NewFormResponse(*form))
 }
 
+func DoNothing(c *gin.Context) {
+	c.JSON(http.StatusOK, apps.NewTextResponse(""))
+	return
+}
+
 func HandleDeleteCalendarEvent(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
@@ -340,11 +345,8 @@ func prepareTimeRangeForGetEventsRequest(chosenDate time.Time) (time.Time, time.
 }
 
 func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
-	var name, description, organizer, eventStatus string
+	var name, organizer, eventStatus string
 	for _, e := range postDTO.event.Properties {
-		if e.BaseProperty.IANAToken == "DESCRIPTION" {
-			description = e.BaseProperty.Value
-		}
 		if e.BaseProperty.IANAToken == "ORGANIZER" {
 			organizer = e.BaseProperty.Value
 		}
@@ -358,14 +360,15 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 
 	post := model.Post{}
 	commandBinding := apps.Binding{
-		Location: "embedded",
-		AppID:    "nextcloud",
-		Label:    createNameForEvent(name, postDTO),
-		Description: сreateDescriptionForEvent(description, сastSingleEmailToMMUserNickname(organizer, "", *postDTO.bot),
-			сastUserEmailsToMMUserNicknames(postDTO.event.Attendees(), *postDTO.bot)),
-		Bindings: []apps.Binding{},
+		Location:    "embedded",
+		AppID:       "nextcloud",
+		Label:       createNameForEvent(name, postDTO),
+		Description: "Going?",
+		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
+
+	сreateViewButton(&commandBinding, "view-details", organizer, "View Details", *postDTO.event, *postDTO.bot)
 
 	if eventStatus == "CANCELLED" {
 		commandBinding.Label = fmt.Sprintf("~~%s~~", commandBinding.Label)
@@ -505,10 +508,47 @@ func сreateDeleteButton(commandBinding *apps.Binding, location apps.Location, l
 		ActingUser:            apps.ExpandAll,
 	}
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
-
 		Location: location,
 		Label:    label,
 		Submit:   apps.NewCall(deletePath).WithExpand(expand),
+	})
+}
+
+func сreateViewButton(commandBinding *apps.Binding, location apps.Location, organizer string, label string, event ics.VEvent, bot appclient.Client) {
+	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
+		Location: location,
+		Label:    label,
+		Form: &apps.Form{
+			Title: "Meeting Details",
+			Fields: []apps.Field{
+				{
+					Type:        apps.FieldTypeText,
+					Name:        "Description",
+					Label:       "Description",
+					ReadOnly:    true,
+					Value:       event.GetProperty(ics.ComponentPropertyDescription).Value,
+					TextSubtype: apps.TextFieldSubtypeTextarea,
+					IsRequired:  true,
+				},
+				{
+					Type:       apps.FieldTypeText,
+					Name:       "Attendees",
+					Label:      "Attendees",
+					ReadOnly:   true,
+					IsRequired: true,
+					Value:      сastUserEmailsToMMUserNicknames(event.Attendees(), bot),
+				},
+				{
+					Type:       apps.FieldTypeText,
+					Name:       "Orginizer",
+					Label:      "Orginizer",
+					ReadOnly:   true,
+					IsRequired: true,
+					Value:      сastSingleEmailToMMUserNickname(organizer, "", bot),
+				},
+			},
+			Submit: apps.NewCall("/do-nothing"),
+		},
 	})
 }
 

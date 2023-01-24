@@ -377,12 +377,10 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 		Location:    "embedded",
 		AppID:       "nextcloud",
 		Label:       createNameForEvent(name, postDTO),
-		Description: "Going?" + fmt.Sprintf("[Connect](%s)", reqUrl),
+		Description: "Going? " + fmt.Sprintf("[Ics link](%s)", reqUrl),
 		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
-	сreateViewButton(&commandBinding, "view-details", organizer, "View Details", postDTO, name, reqUrl)
-	createIcsButton(&commandBinding, reqUrl, "Ics")
 
 	if eventStatus == "CANCELLED" {
 		commandBinding.Label = fmt.Sprintf("Cancelled ~~%s~~", commandBinding.Label)
@@ -406,10 +404,10 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 		commandBinding = calendarService.AddButtonsToEvents(commandBinding, string(status), path)
 	}
 
-	//if organizerEmail == organizer {
 	deletePath := fmt.Sprintf("/delete-event/%s/events/%s", postDTO.calendarId, postDTO.eventId)
 	сreateDeleteButton(&commandBinding, "Delete", "Delete", deletePath)
-	//}
+	сreateViewButton(&commandBinding, "view-details", organizer, "View Details", postDTO, name, reqUrl)
+	createIcsButton(&commandBinding, reqUrl, "Ics")
 	m1 := make(map[string]interface{})
 	m1["app_bindings"] = []apps.Binding{commandBinding}
 
@@ -501,20 +499,6 @@ func createNameForEvent(name string, postDTO *CalendarEventPostDTO) string {
 	remoteUrl := postDTO.creq.Context.OAuth2.RemoteRootURL
 	calendarUrl := fmt.Sprintf("%s%s%s-%s-%s", remoteUrl, "/apps/calendar/timeGridDay/", strconv.Itoa(start.Year()), month, day)
 	return fmt.Sprintf("[%s](%s) %s %s-%s", name, calendarUrl, start.In(postDTO.loc).Format(dayFormat), start.In(postDTO.loc).Format(format), finish.In(postDTO.loc).Format(format))
-}
-
-func сreateDescriptionForEvent(description string, organizer string, attendees string) string {
-	finalDesc := ""
-
-	if len(description) != 0 {
-		finalDesc += fmt.Sprintf("Description %s. ", description)
-	}
-	finalDesc += fmt.Sprintf("Organized by %s. ", organizer[:len(organizer)-1])
-	if len(attendees) != 0 {
-		finalDesc += fmt.Sprintf("Attendees: %s. ", attendees)
-	}
-
-	return finalDesc
 }
 
 func prepareMeetingDurations() []apps.SelectOption {
@@ -627,8 +611,9 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 			Submit: apps.NewCall("/do-nothing"),
 		},
 	})
+	i := len(commandBinding.Bindings) - 1
 	if len(zoomLinks) != 0 {
-		commandBinding.Bindings[0].Form.Fields = append(commandBinding.Bindings[0].Form.Fields, apps.Field{
+		commandBinding.Bindings[i].Form.Fields = append(commandBinding.Bindings[i].Form.Fields, apps.Field{
 			Type:        apps.FieldTypeText,
 			Name:        "ZoomUrl",
 			Label:       "ZoomLink",
@@ -640,7 +625,7 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 		createMeetingStartButton(commandBinding, strings.Split(zoomLinks, " ")[0], "Zoom")
 	}
 	if len(googleMeetLinks) != 0 {
-		commandBinding.Bindings[0].Form.Fields = append(commandBinding.Bindings[0].Form.Fields, apps.Field{
+		commandBinding.Bindings[i].Form.Fields = append(commandBinding.Bindings[i].Form.Fields, apps.Field{
 			Type:        apps.FieldTypeText,
 			Name:        "GoogleMeetUrl",
 			Label:       "Google-Meet-Link",
@@ -649,7 +634,7 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 			IsRequired:  true,
 			TextSubtype: apps.TextFieldSubtypeURL,
 		})
-		createMeetingStartButton(commandBinding, strings.Split(googleMeetLinks, " ")[0], "Google meet")
+		createMeetingStartButton(commandBinding, strings.Split(googleMeetLinks, " ")[0], "Google Meet")
 	}
 }
 

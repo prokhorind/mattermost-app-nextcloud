@@ -589,6 +589,7 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 					SelectIsMulti:       true,
 					Value:               prepareAttendeeStaticSelect(сastUserEmailsToMMUserNicknames(event.Attendees(), *bot)),
 					SelectStaticOptions: prepareAttendeeStaticSelect(сastUserEmailsToMMUserNicknames(event.Attendees(), *bot)),
+					ReadOnly:            true,
 				},
 				{
 					Type:       apps.FieldTypeText,

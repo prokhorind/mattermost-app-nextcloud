@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	ics "github.com/arran4/golang-ical"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
@@ -169,7 +170,10 @@ func (c CalendarServiceImpl) GetCalendarEvent() string {
 	return string(event)
 }
 
-func (c CalendarServiceImpl) UpdateAttendeeStatus(cal *ics.Calendar, user *model.User, status string) string {
+func (c CalendarServiceImpl) UpdateAttendeeStatus(cal *ics.Calendar, user *model.User, status string) (string, error) {
+	if cal == nil {
+		return "", errors.New("this event is no longer valid")
+	}
 	for _, e := range cal.Events() {
 		for _, a := range e.Attendees() {
 			if user.Email == a.Email() {
@@ -178,7 +182,7 @@ func (c CalendarServiceImpl) UpdateAttendeeStatus(cal *ics.Calendar, user *model
 			}
 		}
 	}
-	return cal.Serialize()
+	return cal.Serialize(), nil
 }
 
 func (c CalendarServiceImpl) AddButtonsToEvents(commandBinding apps.Binding, status string, path string) apps.Binding {

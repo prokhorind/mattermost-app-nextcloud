@@ -8,6 +8,7 @@ import (
 	"github.com/prokhorind/nextcloud/function/user"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -75,6 +76,14 @@ func DMEventPost(creq apps.CallRequest, calendarService CalendarServiceImpl, cal
 	post := createCalendarEventPost(&postDto)
 	mmUserId := creq.Context.ActingUser.Id
 	asBot.DMPost(mmUserId, post)
+}
+
+func RedirectToAMeeting(c *gin.Context) {
+	creq := apps.CallRequest{}
+	json.NewDecoder(c.Request.Body).Decode(&creq)
+	link := fmt.Sprint(creq.State)
+	response := apps.CallResponse{Type: apps.CallResponseTypeNavigate, NavigateToURL: link}
+	c.JSON(http.StatusOK, response)
 }
 
 func HandleCreateEventForm(c *gin.Context) {
@@ -358,25 +367,25 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 		}
 	}
 
+	userId := postDTO.creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
+	remoteUrl := postDTO.creq.Context.OAuth2.OAuth2App.RemoteRootURL
+	uuid := postDTO.event.GetProperty(ics.ComponentPropertyUniqueId).Value
+	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s.ics", remoteUrl, userId, postDTO.calendarId, uuid)
+
 	post := model.Post{}
 	commandBinding := apps.Binding{
 		Location:    "embedded",
 		AppID:       "nextcloud",
 		Label:       createNameForEvent(name, postDTO),
-		Description: "Going?",
+		Description: "Going?" + fmt.Sprintf("[Connect](%s)", reqUrl),
 		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
-	userId := postDTO.creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
-	remoteUrl := postDTO.creq.Context.OAuth2.OAuth2App.RemoteRootURL
-	uuid := postDTO.event.GetProperty(ics.ComponentPropertyUniqueId).Value
-
-	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s.ics", remoteUrl, userId, postDTO.calendarId, uuid)
-
 	сreateViewButton(&commandBinding, "view-details", organizer, "View Details", postDTO, name, reqUrl)
+	createIcsButton(&commandBinding, reqUrl, "Ics")
 
 	if eventStatus == "CANCELLED" {
-		commandBinding.Label = fmt.Sprintf("~~%s~~", commandBinding.Label)
+		commandBinding.Label = fmt.Sprintf("Cancelled ~~%s~~", commandBinding.Label)
 		commandBinding.Description = fmt.Sprintf("~~%s~~", commandBinding.Description)
 		m1 := make(map[string]interface{})
 		m1["app_bindings"] = []apps.Binding{commandBinding}
@@ -397,16 +406,32 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 		commandBinding = calendarService.AddButtonsToEvents(commandBinding, string(status), path)
 	}
 
-	if organizerEmail == organizer {
-		deletePath := fmt.Sprintf("/delete-event/%s/events/%s", postDTO.calendarId, postDTO.eventId)
-		сreateDeleteButton(&commandBinding, "Delete", "Delete", deletePath)
-	}
+	//if organizerEmail == organizer {
+	deletePath := fmt.Sprintf("/delete-event/%s/events/%s", postDTO.calendarId, postDTO.eventId)
+	сreateDeleteButton(&commandBinding, "Delete", "Delete", deletePath)
+	//}
 	m1 := make(map[string]interface{})
 	m1["app_bindings"] = []apps.Binding{commandBinding}
 
 	post.SetProps(m1)
 
 	return &post
+}
+
+func createMeetingStartButton(commandBinding *apps.Binding, link string, location apps.Location) {
+	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
+		Location: location,
+		Label:    fmt.Sprintf("Start %s meeting", location),
+		Submit:   apps.NewCall("/redirect/meeting").WithState(link),
+	})
+}
+
+func createIcsButton(commandBinding *apps.Binding, link string, location apps.Location) {
+	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
+		Location: location,
+		Label:    "Ics meeting",
+		Submit:   apps.NewCall("/redirect/meeting").WithState(link),
+	})
 }
 
 func сastUserEmailsToMMUserNicknames(attendees []*ics.Attendee, bot appclient.Client) string {
@@ -427,9 +452,9 @@ func сastSingleEmailToMMUserNickname(email string, status string, bot appclient
 	mmUser, _, err := bot.GetUserByEmail(email, "")
 	if err == nil {
 		if status == "" {
-			return "@" + mmUser.Username + " "
+			return "@" + mmUser.Username + "-" + email + " "
 		}
-		return "@" + mmUser.Username + "-" + status + " "
+		return "@" + mmUser.Username + "-" + email + "-" + status + " "
 	} else {
 		return email + "-" + status + " "
 	}
@@ -549,6 +574,8 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 	} else {
 		description = property.Value
 	}
+	zoomLinks, googleMeetLinks := getZoomAndGoogleMeetLinksFromDescription(description)
+
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 		Location: location,
 		Label:    label,
@@ -589,8 +616,8 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 				},
 				{
 					Type:        apps.FieldTypeText,
-					Name:        "Url",
-					Label:       "Url",
+					Name:        "IcsLink",
+					Label:       "IcsLink",
 					Value:       reqUrl,
 					ReadOnly:    true,
 					IsRequired:  true,
@@ -600,6 +627,38 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 			Submit: apps.NewCall("/do-nothing"),
 		},
 	})
+	if len(zoomLinks) != 0 {
+		commandBinding.Bindings[0].Form.Fields = append(commandBinding.Bindings[0].Form.Fields, apps.Field{
+			Type:        apps.FieldTypeText,
+			Name:        "ZoomUrl",
+			Label:       "ZoomLink",
+			Value:       zoomLinks,
+			ReadOnly:    true,
+			IsRequired:  true,
+			TextSubtype: apps.TextFieldSubtypeURL,
+		})
+		createMeetingStartButton(commandBinding, strings.Split(zoomLinks, " ")[0], "Zoom")
+	}
+	if len(googleMeetLinks) != 0 {
+		commandBinding.Bindings[0].Form.Fields = append(commandBinding.Bindings[0].Form.Fields, apps.Field{
+			Type:        apps.FieldTypeText,
+			Name:        "GoogleMeetUrl",
+			Label:       "Google-Meet-Link",
+			Value:       googleMeetLinks,
+			ReadOnly:    true,
+			IsRequired:  true,
+			TextSubtype: apps.TextFieldSubtypeURL,
+		})
+		createMeetingStartButton(commandBinding, strings.Split(googleMeetLinks, " ")[0], "Google meet")
+	}
+}
+
+func getZoomAndGoogleMeetLinksFromDescription(description string) (string, string) {
+	zoomPattern := regexp.MustCompile(`https:\/\/[\w-]*\.?zoom.us\/(j|my)\/[\d\w?=-]+`)
+	googleMeetPattern := regexp.MustCompile(`https?:\/\/(.+?\.)?meet\.google\.com(\/[A-Za-z0-9\-]*)?`)
+	zoomLinks := zoomPattern.FindAllString(description, -1)
+	googleMeetLinks := googleMeetPattern.FindAllString(description, -1)
+	return strings.Join(zoomLinks, " "), strings.Join(googleMeetLinks, " ")
 }
 
 func prepareAttendeeStaticSelect(attendees string) []apps.SelectOption {
@@ -635,7 +694,11 @@ func HandleChangeEventStatus(c *gin.Context) {
 
 	cal, _ := ics.ParseCalendar(strings.NewReader(eventIcs))
 
-	body := calendarService.UpdateAttendeeStatus(cal, user, status)
+	body, error := calendarService.UpdateAttendeeStatus(cal, user, status)
+	if error != nil {
+		c.JSON(http.StatusOK, apps.NewTextResponse("Event is no longer valid"))
+		return
+	}
 	_, err := calendarService.CreateEvent(body)
 
 	if err != nil {

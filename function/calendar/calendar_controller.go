@@ -74,6 +74,7 @@ func DMEventPost(creq apps.CallRequest, calendarService CalendarServiceImpl, cal
 
 	postDto := CalendarEventPostDTO{vEvent, asBot, calendar, uuid + ".ics", loc, creq}
 	post := createCalendarEventPost(&postDto)
+	post.Message = "Event created"
 	mmUserId := creq.Context.ActingUser.Id
 	asBot.DMPost(mmUserId, post)
 }

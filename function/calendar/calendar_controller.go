@@ -378,7 +378,7 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 		Location:    "embedded",
 		AppID:       "nextcloud",
 		Label:       createNameForEvent(name, postDTO),
-		Description: "Going? " + fmt.Sprintf("[Ics link](%s)", reqUrl),
+		Description: "Going?\n" + fmt.Sprintf("[Ics link](%s)", reqUrl),
 		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
@@ -420,7 +420,7 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 func createMeetingStartButton(commandBinding *apps.Binding, link string, location apps.Location) {
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 		Location: location,
-		Label:    fmt.Sprintf("Start %s meeting", location),
+		Label:    fmt.Sprintf("Join %s Meeting", location),
 		Submit:   apps.NewCall("/redirect/meeting").WithState(link),
 	})
 }

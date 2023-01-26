@@ -370,7 +370,6 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 
 	userId := postDTO.creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
 	remoteUrl := postDTO.creq.Context.OAuth2.OAuth2App.RemoteRootURL
-	//uuid := postDTO.event.GetProperty(ics.ComponentPropertyUniqueId).Value
 	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s", remoteUrl, userId, postDTO.calendarId, postDTO.eventId)
 
 	post := model.Post{}

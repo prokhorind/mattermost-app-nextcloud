@@ -370,15 +370,15 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 
 	userId := postDTO.creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
 	remoteUrl := postDTO.creq.Context.OAuth2.OAuth2App.RemoteRootURL
-	uuid := postDTO.event.GetProperty(ics.ComponentPropertyUniqueId).Value
-	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s.ics", remoteUrl, userId, postDTO.calendarId, uuid)
+	//uuid := postDTO.event.GetProperty(ics.ComponentPropertyUniqueId).Value
+	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s/%s", remoteUrl, userId, postDTO.calendarId, postDTO.eventId)
 
 	post := model.Post{}
 	commandBinding := apps.Binding{
 		Location:    "embedded",
 		AppID:       "nextcloud",
 		Label:       createNameForEvent(name, postDTO),
-		Description: "Going?\n" + fmt.Sprintf("[Ics link](%s)", reqUrl),
+		Description: "Going?",
 		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
@@ -408,7 +408,6 @@ func createCalendarEventPost(postDTO *CalendarEventPostDTO) *model.Post {
 	deletePath := fmt.Sprintf("/delete-event/%s/events/%s", postDTO.calendarId, postDTO.eventId)
 	сreateDeleteButton(&commandBinding, "Delete", "Delete", deletePath)
 	сreateViewButton(&commandBinding, "view-details", organizer, "View Details", postDTO, name, reqUrl)
-	createIcsButton(&commandBinding, reqUrl, "Ics")
 	m1 := make(map[string]interface{})
 	m1["app_bindings"] = []apps.Binding{commandBinding}
 
@@ -421,14 +420,6 @@ func createMeetingStartButton(commandBinding *apps.Binding, link string, locatio
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 		Location: location,
 		Label:    fmt.Sprintf("Join %s Meeting", location),
-		Submit:   apps.NewCall("/redirect/meeting").WithState(link),
-	})
-}
-
-func createIcsButton(commandBinding *apps.Binding, link string, location apps.Location) {
-	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
-		Location: location,
-		Label:    "Ics meeting",
 		Submit:   apps.NewCall("/redirect/meeting").WithState(link),
 	})
 }
@@ -600,15 +591,6 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 					IsRequired: true,
 					Value:      сastSingleEmailToMMUserNickname(organizer, "", *bot),
 				},
-				{
-					Type:        apps.FieldTypeText,
-					Name:        "IcsLink",
-					Label:       "IcsLink",
-					Value:       reqUrl,
-					ReadOnly:    true,
-					IsRequired:  true,
-					TextSubtype: apps.TextFieldSubtypeURL,
-				},
 			},
 			Submit: apps.NewCall("/do-nothing"),
 		},
@@ -638,6 +620,15 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 		})
 		createMeetingStartButton(commandBinding, strings.Split(googleMeetLinks, " ")[0], "Google Meet")
 	}
+	commandBinding.Bindings[i].Form.Fields = append(commandBinding.Bindings[i].Form.Fields, apps.Field{
+		Type:        apps.FieldTypeText,
+		Name:        "IcsLink",
+		Label:       "IcsLink",
+		Value:       reqUrl,
+		ReadOnly:    true,
+		IsRequired:  true,
+		TextSubtype: apps.TextFieldSubtypeURL,
+	})
 }
 
 func getZoomAndGoogleMeetLinksFromDescription(description string) (string, string) {

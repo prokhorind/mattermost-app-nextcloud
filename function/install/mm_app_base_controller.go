@@ -159,19 +159,6 @@ func Bindings(c *gin.Context) {
 		}),
 	})
 
-	upload := apps.Binding{
-		Label:    "Upload file to Nextcloud",
-		Location: apps.Location("id"),
-		Icon:     "icon.png",
-		Submit: apps.NewCall("/file-upload-form").WithExpand(apps.Expand{
-			ActingUserAccessToken: apps.ExpandAll,
-			OAuth2App:             apps.ExpandAll,
-			OAuth2User:            apps.ExpandAll,
-			Post:                  apps.ExpandAll,
-			ActingUser:            apps.ExpandAll,
-		}),
-	}
-
 	c.JSON(http.StatusOK, apps.CallResponse{
 		Type: apps.CallResponseTypeOK,
 		Data: []apps.Binding{

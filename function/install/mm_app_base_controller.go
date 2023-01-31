@@ -47,6 +47,7 @@ func Bindings(c *gin.Context) {
 	token := oauth.Token{}
 	remarshal(&token, creq.Context.OAuth2.User)
 
+	var upload apps.Binding
 	if token.AccessToken == "" {
 		commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 			Location: "connect",
@@ -94,6 +95,19 @@ func Bindings(c *gin.Context) {
 					ActingUser:            apps.ExpandAll,
 				}),
 			})
+
+		upload = apps.Binding{
+			Label:    "Upload file to Nextcloud",
+			Location: apps.Location("id"),
+			Icon:     "icon.png",
+			Submit: apps.NewCall("/file-upload-form").WithExpand(apps.Expand{
+				ActingUserAccessToken: apps.ExpandAll,
+				OAuth2App:             apps.ExpandAll,
+				OAuth2User:            apps.ExpandAll,
+				Post:                  apps.ExpandAll,
+				ActingUser:            apps.ExpandAll,
+			}),
+		}
 
 	}
 

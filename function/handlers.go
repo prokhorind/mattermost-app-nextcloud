@@ -27,7 +27,7 @@ func InitHandlers(r *gin.Engine) {
 	r.POST("/delete-event/:calendarId/events/:eventId", calendar.HandleDeleteCalendarEvent)
 	r.POST("/do-nothing", calendar.DoNothing)
 	r.POST("/redirect/meeting", calendar.RedirectToAMeeting)
-	r.POST("help", help.HandleHelpCommand)
+	r.POST("/help", help.HandleHelpCommand)
 
 	r.POST("/get-parsed-date", calendar.HandleGetParsedCalendarDate)
 	r.POST("/file-upload-form", file.FileUploadForm)

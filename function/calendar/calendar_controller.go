@@ -623,7 +623,7 @@ func сreateViewButton(commandBinding *apps.Binding, location apps.Location, org
 		Type:        apps.FieldTypeText,
 		Name:        "Event-Import",
 		Label:       "Event-Import",
-		Description: "Use this link to import event in the Outlook",
+		Description: "Use this link to import event in your calendars",
 		Value:       reqUrl,
 		ReadOnly:    true,
 		IsRequired:  true,

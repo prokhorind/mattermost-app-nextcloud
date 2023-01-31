@@ -11,6 +11,15 @@ import (
 	"unicode"
 )
 
+type HelpService interface {
+	HandleHelpCommand(c *gin.Context)
+}
+
+type HelpServiceImpl struct {
+	c       *gin.Context
+	request apps.CallRequest
+}
+
 func HandleHelpCommand(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
@@ -24,6 +33,8 @@ func HandleHelpCommand(c *gin.Context) {
 	builder.WriteString(createHelpForSingleCommand(c, creq, "share"))
 	builder.WriteString("\n")
 	builder.WriteString(createHelpForSingleCommand(c, creq, "calendars"))
+	builder.WriteString("\n")
+	builder.WriteString(createHelpForSingleCommand(c, creq, "disconnect"))
 	builder.WriteString("\n")
 	builder.WriteString("\n")
 	builder.WriteString(getSingleHelpMessage(c, creq, "tips"))

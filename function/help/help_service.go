@@ -26,7 +26,9 @@ func HandleHelpCommand(c *gin.Context) {
 	builder := strings.Builder{}
 	builder.WriteString(getSingleHelpMessage(c, creq, "title"))
 	builder.WriteString("\n")
-	builder.WriteString(createHelpForSingleCommand(c, creq, "configure"))
+	if creq.Context.ActingUser.IsSystemAdmin() {
+		builder.WriteString(createHelpForSingleCommand(c, creq, "configure"))
+	}
 	builder.WriteString("\n")
 	builder.WriteString(createHelpForSingleCommand(c, creq, "connect"))
 	builder.WriteString("\n")

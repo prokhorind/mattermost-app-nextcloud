@@ -54,7 +54,7 @@ func HandleCreateEvent(c *gin.Context) {
 	calendarRequestService := CalendarRequestServiceImpl{Url: reqUrl, Token: accessToken}
 	calendarService := CalendarServiceImpl{calendarRequestService: calendarRequestService}
 
-	_, err := calendarRequestService.CreateEvent(body)
+	_, err := calendarService.CreateEvent(body)
 
 	if err != nil {
 		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Calendar event was not created"})
@@ -695,7 +695,7 @@ func HandleChangeEventStatus(c *gin.Context) {
 		c.JSON(http.StatusOK, apps.NewTextResponse("Event is no longer valid"))
 		return
 	}
-	_, err := calendarRequestService.CreateEvent(body)
+	_, err := calendarService.CreateEvent(body)
 
 	if err != nil {
 		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Event status was not updated"})

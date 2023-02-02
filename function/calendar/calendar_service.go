@@ -18,6 +18,7 @@ const (
 )
 
 type CalendarService interface {
+	CreateEvent(body string) (*http.Response, error)
 	GetUrl() string
 	GetCalendarEvent() (string, error)
 	DeleteUserEvent() (*http.Response, error)
@@ -34,6 +35,10 @@ type CalendarServiceImpl struct {
 func (c CalendarServiceImpl) GetUrl() string {
 	return c.calendarRequestService.getUrl()
 
+}
+
+func (c CalendarServiceImpl) CreateEvent(body string) (*http.Response, error) {
+	return c.calendarRequestService.createEvent(body)
 }
 
 func (c CalendarServiceImpl) GetUserCalendars() []apps.SelectOption {
@@ -165,6 +170,7 @@ type CalendarRequestService interface {
 	getUserCalendars() (UserCalendarsResponse, error)
 	deleteUserEvent() (*http.Response, error)
 	getCalendarEvents(event CalendarEventRequestRange) (UserCalendarEventsResponse, error)
+	createEvent(body string) (*http.Response, error)
 }
 
 type CalendarRequestServiceImpl struct {
@@ -259,7 +265,7 @@ func (c CalendarRequestServiceImpl) getCalendarEvents(event CalendarEventRequest
 
 }
 
-func (c CalendarRequestServiceImpl) CreateEvent(body string) (*http.Response, error) {
+func (c CalendarRequestServiceImpl) createEvent(body string) (*http.Response, error) {
 
 	req, _ := http.NewRequest("PUT", c.Url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "text/calendar; charset=UTF-8")

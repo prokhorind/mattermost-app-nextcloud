@@ -5,6 +5,8 @@ import (
 	ics "github.com/arran4/golang-ical"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/pkg/errors"
+	"github.com/prokhorind/nextcloud/function/oauth"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,7 +115,7 @@ type GetUserByEmailService interface {
 }
 
 type EmailToNicknameCastService struct {
-	GetUserByEmailService GetUserByEmailService
+	GetMMUser GetMMUser
 }
 
 func (s EmailToNicknameCastService) сastUserEmailsToMMUserNicknames(attendees []*ics.Attendee) string {
@@ -134,7 +136,7 @@ func (s EmailToNicknameCastService) сastSingleEmailToMMUserNickname(email strin
 	if strings.Contains(email, ":") {
 		email = strings.Split(email, ":")[1]
 	}
-	mmUser, _, err := s.GetUserByEmailService.GetUserByEmail(email, "")
+	mmUser, _, err := s.GetMMUser.GetUserByEmail(email, "")
 	if err == nil {
 		if status == "" {
 			return "@" + mmUser.Username + "-" + email + " "
@@ -154,14 +156,6 @@ func (s DetailsViewFormService) createDateForEventInForm(postDTO *CalendarEventP
 
 	format := dateFormatService.GetTimeFormatsByLocale(parsedLocale)
 	dayFormat := dateFormatService.GetFullFormatsByLocale(parsedLocale)
-	day := strconv.Itoa(start.Day())
-	month := strconv.Itoa(int(start.Month()))
-	if len(day) < 2 {
-		day = "0" + day
-	}
-	if len(month) < 2 {
-		month = "0" + month
-	}
 
 	return fmt.Sprintf("%s %s-%s", start.In(postDTO.loc).Format(dayFormat), start.In(postDTO.loc).Format(format), finish.In(postDTO.loc).Format(format))
 }
@@ -210,9 +204,8 @@ func (s CalendarTimePostService) GetMMUserLocation(creq apps.CallRequest) *time.
 	return loc
 }
 
-func (s DetailsViewFormService) CreateViewButton(commandBinding *apps.Binding, location apps.Location, organizer string, label string, postDTO *CalendarEventPostDTO, name string, reqUrl string) {
+func (s DetailsViewFormService) CreateViewButton(commandBinding *apps.Binding, location apps.Location, organizer string, label string, postDTO *CalendarEventPostDTO, formTitle string, icsLink string) {
 	event := postDTO.event
-	bot := postDTO.bot
 	property := event.GetProperty(ics.ComponentPropertyDescription)
 	var description string
 	if property == nil {
@@ -221,13 +214,13 @@ func (s DetailsViewFormService) CreateViewButton(commandBinding *apps.Binding, l
 		description = property.Value
 	}
 	zoomLinks, googleMeetLinks := s.getZoomAndGoogleMeetLinksFromDescription(description)
-	service := EmailToNicknameCastService{GetUserByEmailService: bot}
+	service := EmailToNicknameCastService{GetMMUser: postDTO.bot}
 
 	commandBinding.Bindings = append(commandBinding.Bindings, apps.Binding{
 		Location: location,
 		Label:    label,
 		Form: &apps.Form{
-			Title: name,
+			Title: formTitle,
 			Fields: []apps.Field{
 				{
 					Type:       apps.FieldTypeText,
@@ -296,7 +289,7 @@ func (s DetailsViewFormService) CreateViewButton(commandBinding *apps.Binding, l
 		Name:        "Event-Import",
 		Label:       "Event-Import",
 		Description: "Use this link to import event in your calendars",
-		Value:       reqUrl,
+		Value:       icsLink,
 		ReadOnly:    true,
 		IsRequired:  true,
 		TextSubtype: apps.TextFieldSubtypeURL,
@@ -321,6 +314,9 @@ func (s DetailsViewFormService) prepareAttendeeStaticSelect(attendees string) []
 
 type GetMMUser interface {
 	GetUser(userId, etag string) (*model.User, *model.Response, error)
+	GetUserByEmail(email, etag string) (*model.User, *model.Response, error)
+	DMPost(userID string, post *model.Post) (*model.Post, error)
+	GetUsersByIds(userIds []string) ([]*model.User, *model.Response, error)
 }
 
 type CreateCalendarEventPostService struct {
@@ -411,4 +407,62 @@ func (s CreateCalendarEventPostService) сreateDeleteButton(commandBinding *apps
 		Label:    label,
 		Submit:   apps.NewCall(deletePath).WithExpand(expand),
 	})
+}
+
+type OauthService interface {
+	RefreshToken() oauth.Token
+}
+
+type GetEventsService struct {
+	CalendarService                CalendarService
+	CalendarTimePostService        CalendarTimePostService
+	CreateCalendarEventPostService CreateCalendarEventPostService
+	GetMMUser                      GetMMUser
+}
+
+func (s GetEventsService) GetUserEvents(creq apps.CallRequest, date time.Time, calendar string) error {
+	loc := s.CalendarTimePostService.GetMMUserLocation(creq)
+
+	mmUserId := creq.Context.ActingUser.Id
+
+	from, to := s.CalendarTimePostService.PrepareTimeRangeForGetEventsRequest(date)
+	eventRange := CalendarEventRequestRange{
+		From: from,
+		To:   to,
+	}
+
+	events, eventIds := s.CalendarService.GetCalendarEvents(eventRange)
+	calendarEvents := make([]ics.VEvent, 0)
+
+	for i := 0; i < len(events); i++ {
+		cal, _ := ics.ParseCalendar(strings.NewReader(events[i]))
+		event := *cal.Events()[0]
+		if len(event.Properties) != 0 {
+			calendarEvents = append(calendarEvents, event)
+		}
+	}
+
+	dailyCalendarEvents := make([]ics.VEvent, 0)
+
+	for _, e := range calendarEvents {
+		at, _ := e.GetStartAt()
+		endAt, _ := e.GetEndAt()
+		localStartTime := at.In(loc)
+		localEndTime := endAt.In(loc)
+		if localStartTime.Day() == date.Day() || localEndTime.Day() == date.Day() {
+			dailyCalendarEvents = append(dailyCalendarEvents, e)
+		}
+	}
+
+	if len(dailyCalendarEvents) == 0 {
+		return errors.New("You don`t have events at this day")
+	}
+
+	for i, e := range dailyCalendarEvents {
+		postDto := CalendarEventPostDTO{&e, s.GetMMUser, calendar, eventIds[i], loc, creq}
+		post := s.CreateCalendarEventPostService.CreateCalendarEventPost(&postDto)
+		s.GetMMUser.DMPost(mmUserId, post)
+	}
+
+	return nil
 }

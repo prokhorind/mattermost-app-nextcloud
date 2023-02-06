@@ -29,7 +29,7 @@ func HandleCreateEvent(c *gin.Context) {
 	asActingUser := appclient.AsActingUser(creq.Context)
 	asActingUser.StoreOAuth2User(token)
 
-	calendarEventService := CalendarEventServiceImpl{creq}
+	calendarEventService := CalendarEventServiceImpl{creq, asActingUser}
 	fromDateUTC := creq.Values["from-event-date"].(map[string]interface{})["value"].(string)
 	duration := creq.Values["duration"].(map[string]interface{})["value"].(string)
 
@@ -80,8 +80,9 @@ func DMEventPost(creq apps.CallRequest, calendarService CalendarService, calenda
 
 	loc := calendarTimePostService.GetMMUserLocation(creq)
 
-	postDto := CalendarEventPostDTO{vEvent, asBot, calendar, uuid + ".ics", loc, creq}
 	createCalendarEventPostService := CreateCalendarEventPostService{GetMMUser: asBot}
+	postDto := CalendarEventPostDTO{vEvent, asBot, calendar, uuid + ".ics", loc, creq}
+
 	post := createCalendarEventPostService.CreateCalendarEventPost(&postDto)
 	post.Message = "Event created"
 	mmUserId := creq.Context.ActingUser.Id
@@ -271,98 +272,96 @@ func GetUserSelectedEventsDate(c *gin.Context) {
 func HandleGetEventsToday(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
+	oauthService := oauth.OauthServiceImpl{creq}
+	token := oauthService.RefreshToken()
+
+	asActingUser := appclient.AsActingUser(creq.Context)
+	asActingUser.StoreOAuth2User(token)
+	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
+	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	userId := creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
+	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s", remoteUrl, userId, calendar)
+	asBot := appclient.AsBot(creq.Context)
+
 	calendarTimePostService := CalendarTimePostService{}
+	calendarRequestService := CalendarRequestServiceImpl{Url: reqUrl, Token: token.AccessToken}
+	calendarService := CalendarServiceImpl{calendarRequestService: calendarRequestService}
+	calendarPostServiceImpl := CreateCalendarEventPostService{GetMMUser: asBot}
 
 	location := calendarTimePostService.GetMMUserLocation(creq)
-	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
-	HandleGetEvents(c, creq, time.Now().In(location), calendar)
+
+	service := GetEventsService{calendarService, calendarTimePostService, calendarPostServiceImpl, asBot}
+	err := service.GetUserEvents(creq, time.Now().In(location), calendar)
+	if err != nil {
+		c.JSON(http.StatusOK, apps.NewTextResponse("You don`t have events at this date"))
+		return
+	}
+	c.JSON(http.StatusOK, apps.NewDataResponse(nil))
 }
 
 func HandleGetEventsTomorrow(c *gin.Context) {
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
+	oauthService := oauth.OauthServiceImpl{creq}
+	token := oauthService.RefreshToken()
+
+	asActingUser := appclient.AsActingUser(creq.Context)
+	asActingUser.StoreOAuth2User(token)
+	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
+	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
+	userId := creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
+	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s", remoteUrl, userId, calendar)
+	asBot := appclient.AsBot(creq.Context)
+
 	calendarTimePostService := CalendarTimePostService{}
+	calendarRequestService := CalendarRequestServiceImpl{Url: reqUrl, Token: token.AccessToken}
+	calendarService := CalendarServiceImpl{calendarRequestService: calendarRequestService}
+	calendarPostServiceImpl := CreateCalendarEventPostService{GetMMUser: asBot}
 
 	location := calendarTimePostService.GetMMUserLocation(creq)
-	calendar := creq.Call.State.(map[string]interface{})["value"].(string)
-	HandleGetEvents(c, creq, time.Now().AddDate(0, 0, 1).In(location), calendar)
+
+	service := GetEventsService{calendarService, calendarTimePostService, calendarPostServiceImpl, asBot}
+	err := service.GetUserEvents(creq, time.Now().AddDate(0, 0, 1).In(location), calendar)
+	if err != nil {
+		c.JSON(http.StatusOK, apps.NewTextResponse("You don`t have events at this date"))
+		return
+	}
+	c.JSON(http.StatusOK, apps.NewDataResponse(nil))
 }
 
 func HandleGetEventsAtSelectedDay(c *gin.Context) {
 	calendar := c.Param("calendar")
 	creq := apps.CallRequest{}
 	json.NewDecoder(c.Request.Body).Decode(&creq)
-	calendarTimePostService := CalendarTimePostService{}
-
-	location := calendarTimePostService.GetMMUserLocation(creq)
-	fromDateUTC := creq.Values["from-event-date"].(map[string]interface{})["value"].(string)
-	from, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", fromDateUTC)
-	if err != nil {
-		println(err.Error())
-	}
-	HandleGetEvents(c, creq, from.In(location), calendar)
-}
-
-func HandleGetEvents(c *gin.Context, creq apps.CallRequest, date time.Time, calendar string) {
 	oauthService := oauth.OauthServiceImpl{creq}
 	token := oauthService.RefreshToken()
 
 	asActingUser := appclient.AsActingUser(creq.Context)
 	asActingUser.StoreOAuth2User(token)
-
 	remoteUrl := creq.Context.OAuth2.OAuth2App.RemoteRootURL
 	userId := creq.Context.OAuth2.User.(map[string]interface{})["user_id"].(string)
 	reqUrl := fmt.Sprintf("%s/remote.php/dav/calendars/%s/%s", remoteUrl, userId, calendar)
-	calendarTimePostService := CalendarTimePostService{}
-
-	loc := calendarTimePostService.GetMMUserLocation(creq)
-
 	asBot := appclient.AsBot(creq.Context)
-	mmUserId := creq.Context.ActingUser.Id
 
-	from, to := calendarTimePostService.PrepareTimeRangeForGetEventsRequest(date)
-	eventRange := CalendarEventRequestRange{
-		From: from,
-		To:   to,
-	}
+	calendarTimePostService := CalendarTimePostService{}
 	calendarRequestService := CalendarRequestServiceImpl{Url: reqUrl, Token: token.AccessToken}
 	calendarService := CalendarServiceImpl{calendarRequestService: calendarRequestService}
+	calendarPostServiceImpl := CreateCalendarEventPostService{GetMMUser: asBot}
 
-	events, eventIds := calendarService.GetCalendarEvents(eventRange)
-	calendarEvents := make([]ics.VEvent, 0)
+	location := calendarTimePostService.GetMMUserLocation(creq)
 
-	for i := 0; i < len(events); i++ {
-		cal, _ := ics.ParseCalendar(strings.NewReader(events[i]))
-		event := *cal.Events()[0]
-		if len(event.Properties) != 0 {
-			calendarEvents = append(calendarEvents, event)
-		}
+	service := GetEventsService{calendarService, calendarTimePostService, calendarPostServiceImpl, asBot}
+
+	fromDateUTC := creq.Values["from-event-date"].(map[string]interface{})["value"].(string)
+	from, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", fromDateUTC)
+	if err != nil {
+		println(err.Error())
 	}
-
-	dailyCalendarEvents := make([]ics.VEvent, 0)
-
-	for _, e := range calendarEvents {
-		at, _ := e.GetStartAt()
-		endAt, _ := e.GetEndAt()
-		localStartTime := at.In(loc)
-		localEndTime := endAt.In(loc)
-		if localStartTime.Day() == date.Day() || localEndTime.Day() == date.Day() {
-			dailyCalendarEvents = append(dailyCalendarEvents, e)
-		}
-	}
-
-	if len(dailyCalendarEvents) == 0 {
+	getEventErr := service.GetUserEvents(creq, from.In(location), calendar)
+	if getEventErr != nil {
 		c.JSON(http.StatusOK, apps.NewTextResponse("You don`t have events at this date"))
 		return
 	}
-
-	calendarPostServiceImpl := CreateCalendarEventPostService{GetMMUser: asBot}
-	for i, e := range dailyCalendarEvents {
-		postDto := CalendarEventPostDTO{&e, asBot, calendar, eventIds[i], loc, creq}
-		post := calendarPostServiceImpl.CreateCalendarEventPost(&postDto)
-		asBot.DMPost(mmUserId, post)
-	}
-
 	c.JSON(http.StatusOK, apps.NewDataResponse(nil))
 }
 

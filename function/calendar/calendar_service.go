@@ -7,6 +7,7 @@ import (
 	ics "github.com/arran4/golang-ical"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	"github.com/mattermost/mattermost-server/v6/model"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"strings"
@@ -200,6 +201,12 @@ func (c CalendarRequestServiceImpl) getUserCalendars() (UserCalendarsResponse, e
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusMultiStatus {
+		log.Errorf("getUserCalendars request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("getUserCalendars request failed with code %d", resp.StatusCode)
+		return UserCalendarsResponse{}, respErr
+	}
+
 	if err != nil {
 		return UserCalendarsResponse{}, err
 	}
@@ -218,6 +225,12 @@ func (c CalendarRequestServiceImpl) deleteUserEvent() (*http.Response, error) {
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusNoContent {
+		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("getCalendarEvents request failed with code %d", resp.StatusCode)
+		return nil, respErr
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -226,8 +239,8 @@ func (c CalendarRequestServiceImpl) deleteUserEvent() (*http.Response, error) {
 
 func (c CalendarRequestServiceImpl) getCalendarEvents(event CalendarEventRequestRange) (UserCalendarEventsResponse, error) {
 
-	from := event.From.Format(icalTimestampFormatUtc)
-	to := event.To.Format(icalTimestampFormatUtc)
+	from := event.From.UTC().Format(icalTimestampFormatUtc)
+	to := event.To.UTC().Format(icalTimestampFormatUtc)
 
 	body := fmt.Sprintf(`<c:calendar-query xmlns:c="urn:ietf:params:xml:ns:caldav"
     xmlns:cs="http://calendarserver.org/ns/"
@@ -254,6 +267,12 @@ func (c CalendarRequestServiceImpl) getCalendarEvents(event CalendarEventRequest
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusMultiStatus {
+		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("getCalendarEvents request failed with code %d", resp.StatusCode)
+		return UserCalendarEventsResponse{}, respErr
+	}
+
 	if err != nil {
 		return UserCalendarEventsResponse{}, err
 	}
@@ -276,6 +295,12 @@ func (c CalendarRequestServiceImpl) createEvent(body string) (*http.Response, er
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("getCalendarEvents request failed with code %d", resp.StatusCode)
+		return nil, respErr
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +313,12 @@ func (c CalendarRequestServiceImpl) getCalendarEvent() (string, error) {
 	client := &http.Client{}
 	resp, _ := client.Do(req)
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("getCalendarEvent request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("getCalendarEvent request failed with code %d", resp.StatusCode)
+		return "", respErr
+	}
 
 	event, err := io.ReadAll(resp.Body)
 

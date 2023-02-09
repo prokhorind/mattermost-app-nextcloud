@@ -190,7 +190,7 @@ func (s CalendarTimePostService) PrepareTimeRangeForGetEventsRequest(chosenDate 
 	date := chosenDate.Add(-time.Minute * time.Duration(chosenDate.Minute()))
 	date = date.Add(-time.Hour * time.Duration(chosenDate.Hour()))
 	date = date.Add(-time.Second * time.Duration(chosenDate.Second()))
-	return date.AddDate(0, 0, -1), date.AddDate(0, 0, 1)
+	return date.AddDate(0, 0, -2), date.AddDate(0, 0, 2)
 }
 
 func (s CalendarTimePostService) GetMMUserLocation(creq apps.CallRequest) *time.Location {

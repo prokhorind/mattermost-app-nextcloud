@@ -212,7 +212,11 @@ func (c CalendarRequestServiceImpl) getUserCalendars() (UserCalendarsResponse, e
 	}
 
 	xmlResp := UserCalendarsResponse{}
-	xml.NewDecoder(resp.Body).Decode(&xmlResp)
+	xmlError := xml.NewDecoder(resp.Body).Decode(&xmlResp)
+	if xmlError != nil {
+		log.Errorf("Error during xml decoding %s", xmlError.Error())
+		return UserCalendarsResponse{}, xmlError
+	}
 
 	return xmlResp, nil
 }
@@ -278,7 +282,11 @@ func (c CalendarRequestServiceImpl) getCalendarEvents(event CalendarEventRequest
 	}
 
 	xmlResp := UserCalendarEventsResponse{}
-	xml.NewDecoder(resp.Body).Decode(&xmlResp)
+	xmlError := xml.NewDecoder(resp.Body).Decode(&xmlResp)
+	if xmlError != nil {
+		log.Errorf("Error during xml decoding %s", xmlError.Error())
+		return UserCalendarEventsResponse{}, xmlError
+	}
 
 	return xmlResp, err
 

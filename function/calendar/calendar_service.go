@@ -303,9 +303,9 @@ func (c CalendarRequestServiceImpl) createEvent(body string) (*http.Response, er
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
-		respErr := fmt.Errorf("getCalendarEvents request failed with code %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		log.Errorf("createEvent request failed with status %s", resp.Status)
+		respErr := fmt.Errorf("createEvent request failed with code %d", resp.StatusCode)
 		return nil, respErr
 	}
 

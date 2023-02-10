@@ -477,9 +477,12 @@ func HandleGetParsedCalendarDate(c *gin.Context) {
 	if err != nil || t == nil {
 		so = apps.SelectOption{Label: "", Value: ""}
 	} else {
+		calendarTimePostService := CalendarTimePostService{}
+		loc := calendarTimePostService.GetMMUserLocation(creq)
+		locTime := t.In(loc)
 		dateFormatService := DateFormatLocaleService{}
 		parsedLocale := dateFormatService.GetLocaleByTag(creq.Context.ActingUser.Locale)
-		so = apps.SelectOption{Label: t.Format(dateFormatService.GetDateTimeFormatsByLocale(parsedLocale)), Value: t.String()}
+		so = apps.SelectOption{Label: locTime.Format(dateFormatService.GetDateTimeFormatsByLocale(parsedLocale)), Value: locTime.String()}
 	}
 	var soOptions []apps.SelectOption
 	soOptions = append(soOptions, so)

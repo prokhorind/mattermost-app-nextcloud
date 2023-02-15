@@ -159,27 +159,28 @@ func Bindings(c *gin.Context) {
 		}),
 	})
 
-	response := apps.CallResponse{
-		Type: apps.CallResponseTypeOK,
-		Data: []apps.Binding{
-			{
-				Location: apps.LocationCommand,
-				Bindings: []apps.Binding{
-					commandBinding,
-				},
-			},
-		},
-	}
+	bindings := make([]apps.Binding, 0)
 
 	if len(upload.Label) != 0 {
-		bindings := append(response.Data.([]apps.Binding), apps.Binding{
+		bindings = append(bindings, apps.Binding{
 			Location: apps.LocationPostMenu,
 			Label:    "Nextcloud",
 			Bindings: []apps.Binding{
 				upload,
 			},
 		})
-		response.Data = bindings
+	}
+
+	bindings = append(bindings, apps.Binding{
+		Location: apps.LocationCommand,
+		Bindings: []apps.Binding{
+			commandBinding,
+		},
+	})
+
+	response := apps.CallResponse{
+		Type: apps.CallResponseTypeOK,
+		Data: bindings,
 	}
 
 	c.JSON(http.StatusOK, response)

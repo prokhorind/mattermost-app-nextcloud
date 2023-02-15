@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	"github.com/mattermost/mattermost-server/v6/model"
 	log "github.com/sirupsen/logrus"
 	"net/http"
-	"os"
-	"strconv"
 )
 
 type FileSharesInfo struct {
@@ -50,16 +47,11 @@ func (s FileShareServiceImpl) GetAllUserShares() (*SharedFilesResponseBody, erro
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.Token))
 	req.Header.Set("OCS-APIRequest", "true")
 
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
 	if err != nil {
-		log.Errorf("Error during getting of user shares. Error: %s", err)
 		return nil, err
 	}
 
@@ -84,16 +76,11 @@ func (s FileShareServiceImpl) CreateUserShare(filePath string, shareType int32) 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.Token))
 	req.Header.Set("OCS-APIRequest", "true")
 
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
 	if err != nil {
-		log.Errorf("Error during creating of user share. Error: %s", err)
 		return nil, err
 	}
 

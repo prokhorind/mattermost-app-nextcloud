@@ -5,14 +5,11 @@ import (
 	"errors"
 	"fmt"
 	ics "github.com/arran4/golang-ical"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	"github.com/mattermost/mattermost-server/v6/model"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 )
 
@@ -206,25 +203,19 @@ func (c CalendarRequestServiceImpl) getUserCalendars() (UserCalendarsResponse, e
 	req.Header.Set("Content-Type", "text/xml")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
+	client := &http.Client{}
 	log.Info("Sending user get user calendar request")
-	client := retryClient.StandardClient()
 	resp, err := client.Do(req)
-
 	defer resp.Body.Close()
-
-	if err != nil {
-		log.Errorf("Error during getting of the user calendars. Error: %s", err)
-		return UserCalendarsResponse{}, err
-	}
 
 	if resp.StatusCode != http.StatusMultiStatus {
 		log.Errorf("getUserCalendars request failed with status %s", resp.Status)
 		respErr := fmt.Errorf("getUserCalendars request failed with code %d", resp.StatusCode)
 		return UserCalendarsResponse{}, respErr
+	}
+
+	if err != nil {
+		return UserCalendarsResponse{}, err
 	}
 
 	xmlResp := UserCalendarsResponse{}
@@ -239,22 +230,12 @@ func (c CalendarRequestServiceImpl) getUserCalendars() (UserCalendarsResponse, e
 
 func (c CalendarRequestServiceImpl) deleteUserEvent() (*http.Response, error) {
 	req, _ := http.NewRequest("DELETE", c.Url, nil)
+	client := &http.Client{}
 	req.Header.Set("Content-Type", "text/xml")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	log.Info("Sending a delete request")
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
 	resp, err := client.Do(req)
-
 	defer resp.Body.Close()
-
-	if err != nil {
-		log.Errorf("Error during deleting of the event. Error: %s", err)
-		return nil, err
-	}
 
 	if resp.StatusCode != http.StatusNoContent {
 		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
@@ -262,6 +243,9 @@ func (c CalendarRequestServiceImpl) deleteUserEvent() (*http.Response, error) {
 		return nil, respErr
 	}
 
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 
@@ -291,24 +275,18 @@ func (c CalendarRequestServiceImpl) getCalendarEvents(event CalendarEventRequest
 	req.Header.Set("Depth", "1")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
+	client := &http.Client{}
 	resp, err := client.Do(req)
-
 	defer resp.Body.Close()
-
-	if err != nil {
-		log.Errorf("Error during getting of the calendar events. Error: %s", err)
-		return UserCalendarEventsResponse{}, err
-	}
 
 	if resp.StatusCode != http.StatusMultiStatus {
 		log.Errorf("getCalendarEvents request failed with status %s", resp.Status)
 		respErr := fmt.Errorf("getCalendarEvents request failed with code %d", resp.StatusCode)
 		return UserCalendarEventsResponse{}, respErr
+	}
+
+	if err != nil {
+		return UserCalendarEventsResponse{}, err
 	}
 
 	xmlResp := UserCalendarEventsResponse{}
@@ -330,44 +308,29 @@ func (c CalendarRequestServiceImpl) createEvent(body string) (*http.Response, er
 	req.Header.Set("X-NC-CalDAV-Webcal-Caching", "On")
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
+	client := &http.Client{}
 	log.Info("Sending create event request to Nextcloud")
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
-
-	if err != nil {
-		log.Errorf("Error during creating of the event. Error: %s", err)
-		return nil, err
-	}
-
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		log.Errorf("createEvent request failed with status %s", resp.Status)
 		respErr := fmt.Errorf("createEvent request failed with code %d", resp.StatusCode)
 		return nil, respErr
 	}
 
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 func (c CalendarRequestServiceImpl) getCalendarEvent() (string, error) {
 	req, _ := http.NewRequest("GET", c.Url, nil)
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	log.Info("Sending get calendar event request")
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
-	resp, err := client.Do(req)
+	client := &http.Client{}
+	resp, _ := client.Do(req)
+	log.Info("Sending get calendar event request")
 	defer resp.Body.Close()
-
-	if err != nil {
-		log.Errorf("Error during refreshing of the token. Error: %s", err)
-		return "", err
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("getCalendarEvent request failed with status %s", resp.Status)
@@ -375,9 +338,9 @@ func (c CalendarRequestServiceImpl) getCalendarEvent() (string, error) {
 		return "", respErr
 	}
 
-	event, parsingErr := io.ReadAll(resp.Body)
-	if parsingErr != nil {
-		log.Errorf("Error during parsing of the event. Error: %s", err)
+	event, err := io.ReadAll(resp.Body)
+
+	if err != nil {
 		return "", err
 	}
 

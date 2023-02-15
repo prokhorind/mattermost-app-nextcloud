@@ -3,12 +3,9 @@ package file
 import (
 	"encoding/xml"
 	"fmt"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mattermost/mattermost-plugin-apps/apps"
 	log "github.com/sirupsen/logrus"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 )
 
@@ -21,16 +18,11 @@ func (s FileSearchServiceRequestServiceImpl) sendFileSearchRequest(body string) 
 	req, _ := http.NewRequest("SEARCH", s.url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "text/xml")
 	req.Header.Set("Authorization", "Bearer "+s.accessToken)
-	maxRetries, _ := strconv.Atoi(os.Getenv("MAX_REQUEST_RETRIES"))
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = maxRetries
-
-	client := retryClient.StandardClient()
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
 	if err != nil {
-		log.Errorf("Error during file search request. Error: %s", err)
 		return nil, err
 	}
 

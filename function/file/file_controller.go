@@ -47,7 +47,7 @@ func FileUploadForm(c *gin.Context) {
 		c.JSON(http.StatusOK, apps.NewErrorResponse(errors.New("Request failed during file search")))
 	}
 	searchService := SearchSelectOptionsImpl{}
-	folderSelectOptions, rootSelectOption := searchService.CreateFolderSelectOptions(*resp, userId, "Root", "/")
+	folderSelectOptions, rootSelectOption := searchService.CreateFolderSelectOptions(*resp, userId, "Root", "/", false)
 
 	fileSelectOptions := make([]apps.SelectOption, 0)
 	fileInfos, _, _ := asActingUser.GetFileInfosForPost(creq.Context.Post.Id, "")
@@ -138,7 +138,7 @@ func FileShareForm(c *gin.Context) {
 	files := FileSearchResp.FileResponse
 
 	if len(files) == 0 {
-		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Files not found"})
+		c.JSON(http.StatusOK, apps.NewTextResponse(""))
 		return
 	}
 
@@ -153,7 +153,7 @@ func FileShareForm(c *gin.Context) {
 		return
 	}
 
-	folderSelectOptions, defaultSelectOption := searchService.CreateFolderSelectOptions(*folderSearchResp, userId, "Root", "")
+	folderSelectOptions, defaultSelectOption := searchService.CreateFolderSelectOptions(*folderSearchResp, userId, "Root", "", true)
 
 	if creq.Values["Folder"] != nil {
 		for _, so := range folderSelectOptions {

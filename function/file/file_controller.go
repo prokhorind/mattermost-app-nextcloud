@@ -138,7 +138,7 @@ func FileShareForm(c *gin.Context) {
 	files := FileSearchResp.FileResponse
 
 	if len(files) == 0 {
-		c.JSON(http.StatusOK, apps.NewTextResponse(""))
+		c.JSON(http.StatusOK, apps.CallResponse{Type: apps.CallResponseTypeError, Text: "Files not found"})
 		return
 	}
 

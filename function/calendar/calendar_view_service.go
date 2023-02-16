@@ -218,7 +218,7 @@ func (s DetailsViewFormService) CreateViewButton(commandBinding *apps.Binding, l
 	if property == nil {
 		description = ""
 	} else {
-		description = property.Value
+		description = strings.ReplaceAll(property.Value, "\\n", "\n")
 	}
 	zoomLinks, googleMeetLinks := s.getZoomAndGoogleMeetLinksFromDescription(description)
 	service := EmailToNicknameCastService{GetMMUser: postDTO.bot}

@@ -361,7 +361,7 @@ func (s CreateCalendarEventPostService) CreateCalendarEventPost(postDTO *Calenda
 		Location:    "embedded",
 		AppID:       "nextcloud",
 		Label:       s.createNameForEvent(name, postDTO),
-		Description: "Going?",
+		Description: "",
 		Bindings:    []apps.Binding{},
 	}
 	calendarService := CalendarServiceImpl{}
